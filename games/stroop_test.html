@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stroop Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+</head>
+<body>
+<script>
+  const config = {
+    type: Phaser.AUTO,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    scale: {
+      mode: Phaser.Scale.RESIZE,
+      autoCenter: Phaser.Scale.CENTER_BOTH
+    },
+    scene: {
+      preload: preload,
+      create: create,
+      update: update
+    }
+  };
+
+  const game = new Phaser.Game(config);
+
+  // Game variables
+  const reactionTimes = [];
+  const maxMatches = 10; // Number of rounds in the game
+  let currentMatchCount = 0;
+  let startTime, isCurrentMatch, colorText, infoText, copyButtonBg, copyButtonText, playAgainButtonBg, playAgainButtonText;
+  let countdownText;
+
+  function preload() {}
+
+  function create() {
+    // Informational Text
+    infoText = this.add.text(this.scale.width / 2, this.scale.height - 50, "", {
+      fontSize: "24px",
+      color: "#ffaa00",
+      align: "center"
+    }).setOrigin(0.5);
+
+    // Buttons configuration
+    const buttonWidth = 300;
+    const buttonHeight = 60;
+    const buttonFontSize = 20;
+    const buttonYSpacing = 80; // Space between buttons
+    const buttonX = this.scale.width / 2;
+
+    // "Play Again" Button
+    const playAgainY = this.scale.height / 2 + 160;
+    playAgainButtonBg = this.add.rectangle(buttonX, playAgainY, buttonWidth, buttonHeight, 0x5c8aff); // Light Blue
+    playAgainButtonBg.setStrokeStyle(2, 0xffffff); // White border
+    playAgainButtonBg.setInteractive({ useHandCursor: true });
+    playAgainButtonBg.setVisible(false);
+    playAgainButtonBg.on("pointerdown", () => location.reload());
+    playAgainButtonBg.on("pointerover", () => {
+      playAgainButtonBg.setFillStyle(0x4876e0); // Darker Blue on hover
+    });
+    playAgainButtonBg.on("pointerout", () => {
+      playAgainButtonBg.setFillStyle(0x5c8aff); // Original Blue
+    });
+
+    // Text for "Play Again" button
+    playAgainButtonText = this.add.text(buttonX, playAgainY, "Play Again", {
+      fontSize: `${buttonFontSize}px`,
+      color: "#000000", // Black text color
+      align: "center"
+    }).setOrigin(0.5);
+    playAgainButtonText.setVisible(false);
+
+    // "Copy Results to Clipboard" Button
+    const copyButtonY = playAgainY + buttonYSpacing;
+    copyButtonBg = this.add.rectangle(buttonX, copyButtonY, buttonWidth, buttonHeight, 0x87d37c); // Soft Green
+    copyButtonBg.setStrokeStyle(2, 0xffffff); // White border
+    copyButtonBg.setInteractive({ useHandCursor: true });
+    copyButtonBg.setVisible(false);
+    copyButtonBg.on("pointerdown", copyToClipboard);
+    copyButtonBg.on("pointerover", () => {
+      copyButtonBg.setFillStyle(0x6abf63); // Darker Green on hover
+    });
+    copyButtonBg.on("pointerout", () => {
+      copyButtonBg.setFillStyle(0x87d37c); // Original Green
+    });
+
+    // Text for "Copy to Clipboard" button
+    copyButtonText = this.add.text(buttonX, copyButtonY, "Copy Results to Clipboard", {
+      fontSize: `${buttonFontSize}px`,
+      color: "#000000", // Black text color
+      align: "center"
+    }).setOrigin(0.5);
+    copyButtonText.setVisible(false);
+
+    // Start a countdown before the game begins
+    startCountdown(this, 3); // Countdown of 3 seconds
+
+    // Handle user inputs
+    this.input.keyboard.on("keydown-RIGHT", () => handleInput(true));
+    this.input.keyboard.on("keydown-LEFT", () => handleInput(false));
+
+    // Re-center all elements on window resize
+    this.scale.on('resize', () => centerGameElements(this));
+  }
+
+  function update() {}
+
+  /**
+   * Starts a countdown before the game begins.
+   * @param {Phaser.Scene} scene - The Phaser scene object.
+   * @param {number} countdownTime - The countdown duration (e.g., 3 seconds).
+   */
+  function startCountdown(scene, countdownTime) {
+    countdownText = scene.add.text(scene.scale.width / 2, scene.scale.height / 2, countdownTime, {
+      fontSize: "64px",
+      color: "#ffffff",
+      align: "center"
+    }).setOrigin(0.5);
+
+    const timerEvent = scene.time.addEvent({
+      delay: 1000, // 1 second
+      callback: () => {
+        countdownTime--;
+        if (countdownTime > 0) {
+          countdownText.setText(countdownTime); // Update countdown text
+        } else {
+          countdownText.setText("Go!"); // Display "Go!" at the end of countdown
+          scene.time.addEvent({
+            delay: 1000, // Delay 1 second for "Go!" to appear
+            callback: () => {
+              countdownText.destroy(); // Remove the countdown text
+              generateColorText(scene); // Start the game
+            }
+          });
+          timerEvent.remove(); // Stop the countdown event
+        }
+      },
+      loop: true
+    });
+  }
+
+  /**
+   * Re-centers all game elements on resize.
+   */
+  function centerGameElements(scene) {
+    const { width, height } = scene.scale;
+
+    // Center positions of all elements
+    if (colorText) {
+      colorText.setPosition(width / 2, height / 2);
+    }
+    if (countdownText) {
+      countdownText.setPosition(width / 2, height / 2);
+    }
+    infoText.setPosition(width / 2, height - 50);
+    playAgainButtonBg.setPosition(width / 2, height / 2 + 160);
+    playAgainButtonText.setPosition(width / 2, height / 2 + 160);
+    copyButtonBg.setPosition(width / 2, height / 2 + 240);
+    copyButtonText.setPosition(width / 2, height / 2 + 240);
+  }
+
+  /**
+   * Generates the color text for the current match with random font style and size.
+   */
+  function generateColorText(scene) {
+    if (currentMatchCount >= maxMatches) {
+      endGame(scene);
+      return;
+    }
+
+    // Define font styles and sizes
+    const fontFamilies = ["Arial", "Verdana", "Courier", "Georgia", "Comic Sans MS"];
+    const fontSizes = ["48px", "56px", "64px", "72px", "80px"]; // Different font sizes
+
+    // Randomly select a font style and size
+    const randomFontFamily = fontFamilies[Phaser.Math.Between(0, fontFamilies.length - 1)];
+    const randomFontSize = fontSizes[Phaser.Math.Between(0, fontSizes.length - 1)];
+
+    // Define colors and randomize matching
+    const colorNames = ["Red", "Green", "Blue", "Yellow", "Purple"];
+    const colorValues = [0xff0000, 0x008000, 0x0000ff, 0xffff00, 0x800080];
+
+    isCurrentMatch = Phaser.Math.Between(0, 1) === 0;
+    const randomIndex = Phaser.Math.Between(0, colorNames.length - 1);
+    const colorName = colorNames[randomIndex];
+    const textColor = isCurrentMatch
+            ? colorValues[randomIndex]
+            : colorValues[(randomIndex + 1) % colorValues.length];
+
+    if (colorText) colorText.destroy();
+
+    // Apply the random font style and size
+    colorText = scene.add.text(scene.scale.width / 2, scene.scale.height / 2, colorName, {
+      fontFamily: randomFontFamily,
+      fontSize: randomFontSize,
+      color: Phaser.Display.Color.IntegerToColor(textColor).rgba,
+      align: "center"
+    }).setOrigin(0.5);
+
+    // Fade-in effect for the text
+    colorText.setAlpha(0);
+    scene.tweens.add({
+      targets: colorText,
+      alpha: 1,
+      duration: 1000,
+      ease: 'Power2'
+    });
+
+    startTime = Date.now();
+    currentMatchCount++;
+  }
+
+  function handleInput(isRightPress) {
+    const reactionTime = Date.now() - startTime;
+
+    const timestamp = new Date().toISOString();
+    reactionTimes.push({
+      match: isCurrentMatch,
+      reactionTime,
+      timestamp
+    });
+
+    generateColorText(game.scene.scenes[0]);
+  }
+
+  /**
+   * Ends the game and shows results.
+   */
+  function endGame(scene) {
+    if (colorText) colorText.destroy();
+    infoText.setText("Game Over! Results are ready.");
+    playAgainButtonBg.setVisible(true);
+    playAgainButtonText.setVisible(true);
+    copyButtonBg.setVisible(true);
+    copyButtonText.setVisible(true);
+  }
+
+  /**
+   * Copies CSV results to the clipboard with headers.
+   */
+  function copyToClipboard() {
+    const base64Content = btoa(reactionTimes);
+
+    navigator.clipboard
+            .writeText(base64Content)
+            .then(() => {
+              alert("Results with headers have been copied to the clipboard!");
+            })
+            .catch(err => {
+              alert("Failed to copy to clipboard: " + err);
+            });
+  }
+</script>
+</body>
+</html>

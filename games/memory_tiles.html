@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Tile Game</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: black;
+        }
+        canvas {
+            display: block;
+            margin: auto;
+        }
+    </style>
+</head>
+<body>
+<script>
+    class MemoryGame extends Phaser.Scene {
+        constructor() {
+            super({ key: 'MemoryGame' });
+            this.tileSize = 100; // Size of each tile
+            this.gridSize = 5; // Grid rows and columns
+            this.tiles = [];
+            this.sequence = [];
+            this.userSequence = [];
+            this.level = 1; // Current level
+            this.active = false; // Prevent actions during sequence display
+            this.reactions = [];
+            this.defaultTileColor = 0x4e4e4e
+        }
+
+        preload() {
+            // No external assets for this game
+        }
+
+        create() {
+            this.cameras.main.setBackgroundColor('#000000'); // Set background color
+
+            this.roundFailureCount = 0; // Tracks consecutive failures for the current round
+            this.level = 1; // Start at level 1
+            this.sequence = []; // Sequence for the round
+            this.userSequence = []; // User clicks
+            this.gridSize = 3; // Reset the grid size to 3x3
+
+            this.remainingTilesText = this.add.text(10, 10, 'Remaining Tiles: 0', { font: '16px Arial', fill: '#ffffff' });
+            this.remainingRoundsText = this.add.text(10, 30, 'Failed tries: 0', { font: '16px Arial', fill: '#ffffff' });
+
+            this.resetGame(); // Start the game
+        }
+
+        startRound() {
+            this.userSequence = []; // Reset user sequence
+            this.sequence = []; // Reset sequence for the new round
+
+            // Gradual grid size progression: increase every 10 levels
+            const newGridSize = Math.min(5, 3 + Math.floor((this.level - 1) / 5)); // Max grid size is 5x5
+
+            // Check if grid size increased
+            if (!this.previousGridSize || newGridSize > this.previousGridSize) {
+                this.remainingTiles = 3; // Start with 3 remaining tiles when grid size grows
+            } else {
+                this.remainingTiles = 3 + Math.floor((this.level - 1) / 2); // Gradual growth otherwise
+            }
+
+            this.previousGridSize = newGridSize; // Update the previous grid size
+            this.gridSize = newGridSize; // Set the current grid size
+
+            // Create a list of all possible tile indices for the current grid
+            const totalTiles = this.gridSize * this.gridSize;
+            const availableTiles = Array.from({ length: totalTiles }, (_, i) => i); // [0, 1, ..., totalTiles - 1]
+
+            // Generate a random sequence with unique tiles
+            for (let i = 0; i < this.remainingTiles; i++) {
+                const randomIndex = Phaser.Math.Between(0, availableTiles.length - 1);
+                const selectedTile = availableTiles.splice(randomIndex, 1)[0];
+                this.sequence.push(selectedTile);
+            }
+
+            this.createGrid(); // Re-generate the grid
+            this.showSequence(); // Show the generated sequence
+
+            // Update the "Remaining Tiles" counter
+            this.remainingTilesText.setText(`Remaining Tiles: ${this.sequence.length}`);
+        }
+
+        createGrid() {
+            // Remove any existing tiles
+            this.tiles.forEach(tile => tile.destroy());
+            this.tiles = [];
+
+            // Generate grid of tiles
+            const offsetX = (this.sys.game.config.width - this.tileSize * this.gridSize) / 2;
+            const offsetY = (this.sys.game.config.height - this.tileSize * this.gridSize) / 2;
+
+            for (let row = 0; row < this.gridSize; row++) {
+                for (let col = 0; col < this.gridSize; col++) {
+                    const x = offsetX + col * this.tileSize;
+                    const y = offsetY + row * this.tileSize;
+
+                    const tileIndex = row * this.gridSize + col;
+                    const tile = this.add.rectangle(x + this.tileSize / 2, y + this.tileSize / 2,
+                        this.tileSize - 10, this.tileSize - 10, this.defaultTileColor, 1)
+                        .setInteractive();
+
+                    tile.setData('index', tileIndex);
+
+                    tile.on('pointerdown', () => this.handleTileClick(tile));
+
+                    this.tiles.push(tile);
+                }
+            }
+        }
+
+        showSequence() {
+            let delay = 500;
+            this.active = false;
+
+            // Flash each tile in order
+            this.sequence.forEach((index, i) => {
+                const tile = this.tiles[index];
+
+                // Highlight tile
+                this.time.delayedCall(delay, () => {
+                    tile.setFillStyle(0xff0000); // Yellow during flash
+                });
+
+                // Reset tile color
+                this.time.delayedCall(delay + 500, () => {
+                    tile.setFillStyle(this.defaultTileColor); // Back to white
+                    if (i === this.sequence.length - 1) {
+                        this.active = true; // Enable user interaction
+                    }
+                });
+
+                delay += 600;
+            });
+        }
+
+        handleTileClick(tile) {
+            if (!this.active) return; // Ignore clicks during inactive state
+
+            const index = tile.getData('index');
+            this.userSequence.push(index); // Add clicked tile index to the user's input
+            this.totalClicks = (this.totalClicks || 0) + 1; // Count every click made by the user
+
+            // Feedback: Flash tile
+            tile.setFillStyle(0xff0000); // Green for correct tiles
+            this.time.delayedCall(200, () => {
+                tile.setFillStyle(0xffffff); // Reset the tile color
+            });
+
+            const isCorrect = this.userSequence.every((val, idx) => val === this.sequence[idx]);
+
+            this.reactions.push({
+                time: new Date().toISOString(),
+                isCorrect,
+                sequence: this.sequence.length,
+                userSequence: this.userSequence.length
+            })
+
+            if (!isCorrect) {
+                this.showErrorMessage(); // Trigger failure flow if input is incorrect
+                return;
+            }
+
+            const remainingTiles = this.sequence.length - this.userSequence.length;
+            this.remainingTilesText.setText(`Remaining Tiles: ${remainingTiles}`); // Update UI
+
+            if (this.userSequence.length === this.sequence.length) {
+                // Record correctly clicked tiles (only when the round is successfully completed)
+                this.correctClickedTiles = this.userSequence; // Track the correct tiles
+                this.roundFailureCount = 0; // Reset failure count when the round is completed successfully
+                this.remainingRoundsText.setText(`Failure: ${this.roundFailureCount}`);
+
+                this.time.delayedCall(1000, () => {
+                    this.level++;
+                    this.startRound(); // Move to the next round
+                });
+            }
+        }
+
+        showErrorMessage() {
+            this.active = false; // Disable inputs during the error
+
+            // Display "Wrong Sequence" message
+            const errorMessage = this.add.text(
+                this.sys.game.config.width / 2,
+                20,
+                'Wrong Sequence!',
+                { font: '32px Arial', fill: '#ff4444' }
+            ).setOrigin(0.5);
+
+            // Wait 2 seconds before deciding what to do next
+            this.time.delayedCall(2000, () => {
+                errorMessage.destroy(); // Remove the error message
+
+                this.roundFailureCount++; // Increment round failure count
+                this.remainingRoundsText.setText(`Failed tries: ${this.roundFailureCount}`); // Update UI
+
+                if (this.roundFailureCount >= 3) {
+                    this.showGameOverScreen(); // Trigger Game Over on 3 consecutive round failures
+                } else {
+                    this.startRound(); // Restart the same round
+                }
+            });
+        }
+
+        showGameOverScreen() {
+            this.active = false; // Disable game inputs
+
+            const gameOverText = this.add.text(
+                this.sys.game.config.width / 2,
+                this.sys.game.config.height / 2 - 100,
+                'Game Over!',
+                { font: '40px Arial', fill: '#ff4444' }
+            ).setOrigin(0.5);
+
+            // Restart Button
+            const restartButton = this.add.text(
+                this.sys.game.config.width / 2,
+                this.sys.game.config.height / 2,
+                'Restart Game',
+                { font: '24px Arial', fill: '#ffffff', backgroundColor: '#4444ff', padding: 10 }
+            ).setOrigin(0.5).setInteractive();
+
+            restartButton.on('pointerdown', () => {
+                gameOverText.destroy();
+                restartButton.destroy();
+                copyButton.destroy();
+
+                this.resetGame(); // Restart the game
+            });
+
+            // Copy Results to Clipboard Button
+            const copyButton = this.add.text(
+                this.sys.game.config.width / 2,
+                this.sys.game.config.height / 2 + 50,
+                'Copy Results',
+                { font: '24px Arial', fill: '#ffffff', backgroundColor: '#44aa44', padding: 10 }
+            ).setOrigin(0.5).setInteractive();
+
+            copyButton.on('pointerdown', () => {
+                let csvContent = Object.keys(this.reactions[0]).join(",") + "\n"
+                this.reactions.forEach(reaction => {
+                    csvContent += Object.values(reaction).join(",") + "\n"
+                })
+
+                // Write CSV content to clipboard
+                navigator.clipboard.writeText(csvContent).then(() => {
+                    alert('Results copied to clipboard!');
+                }).catch(() => {
+                    alert('Failed to copy results.');
+                });
+            });
+        }
+
+
+        gameOver() {
+            this.active = false; // Disable interactions
+
+            // Display "Game Over" text
+            const gameOverText = this.add.text(
+                this.sys.game.config.width / 2,
+                this.sys.game.config.height / 2 - 50,
+                'Game Over!',
+                { font: '32px Arial', fill: '#ff4444' }
+            ).setOrigin(0.5);
+
+            // Display "Click to Restart" instruction
+            const restartText = this.add.text(
+                this.sys.game.config.width / 2,
+                this.sys.game.config.height / 2,
+                'Click to Restart',
+                { font: '24px Arial', fill: '#ffffff' }
+            ).setOrigin(0.5);
+
+            // Wait for user input to reset the game
+            this.input.once('pointerdown', () => {
+                gameOverText.destroy();
+                restartText.destroy();
+                this.resetGame(); // Reset everything to start from level 1
+            });
+        }
+
+
+
+        resetGame() {
+            this.level = 1; // Reset level to 1
+            this.sequence = []; // Clear the current sequence
+            this.userSequence = []; // Clear the player's input
+            this.gridSize = 3; // Reset grid size to the initial 3x3 grid
+            this.remainingTilesText.setText('Remaining Tiles: 0'); // Reset tiles UI
+
+            this.startRound(); // Restart the game
+        }
+    }
+
+    const config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 600,
+        parent: 'game-container',
+        scene: MemoryGame,
+        backgroundColor: '#000000',
+    };
+
+    const game = new Phaser.Game(config);
+</script>
+</body>
+</html>
