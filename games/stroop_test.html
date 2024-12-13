@@ -240,7 +240,7 @@
    * Copies CSV results to the clipboard with headers.
    */
   function copyToClipboard() {
-    const base64Content = btoa(reactionTimes);
+    const base64Content = btoa(JSON.stringify(reactionTimes));
 
     navigator.clipboard
             .writeText(base64Content)

@@ -23,13 +23,13 @@
         constructor() {
             super({ key: 'MemoryGame' });
             this.tileSize = 100; // Size of each tile
-            this.gridSize = 5; // Grid rows and columns
             this.tiles = [];
             this.sequence = [];
             this.userSequence = [];
-            this.level = 1; // Current level
+            this.level = 0; // Current level
             this.active = false; // Prevent actions during sequence display
             this.reactions = [];
+            this.levels = []
             this.defaultTileColor = 0x4e4e4e
         }
 
@@ -41,40 +41,39 @@
             this.cameras.main.setBackgroundColor('#000000'); // Set background color
 
             this.roundFailureCount = 0; // Tracks consecutive failures for the current round
-            this.level = 1; // Start at level 1
             this.sequence = []; // Sequence for the round
             this.userSequence = []; // User clicks
-            this.gridSize = 3; // Reset the grid size to 3x3
+            this.level = 0; // Start at level 1
+            this.levels = []
 
             this.remainingTilesText = this.add.text(10, 10, 'Remaining Tiles: 0', { font: '16px Arial', fill: '#ffffff' });
             this.remainingRoundsText = this.add.text(10, 30, 'Failed tries: 0', { font: '16px Arial', fill: '#ffffff' });
+            this.levelText = this.add.text(10, 50, 'Level: 0', { font: '16px Arial', fill: '#ffffff' });
+
+            for (let i = 3; i <= 6; i++) {
+                for (let j = 3; j <= 3 + i; j++) {
+                    for (let k = 0; k < 3; k++) {
+                        this.levels.push({remainingTiles: j, gridSize: i })
+                    }
+                }
+            }
 
             this.resetGame(); // Start the game
         }
 
         startRound() {
+            this.levelText.setText(`Level: ${this.level}`);
+
             this.userSequence = []; // Reset user sequence
             this.sequence = []; // Reset sequence for the new round
-
-            // Gradual grid size progression: increase every 10 levels
-            const newGridSize = Math.min(5, 3 + Math.floor((this.level - 1) / 5)); // Max grid size is 5x5
-
-            // Check if grid size increased
-            if (!this.previousGridSize || newGridSize > this.previousGridSize) {
-                this.remainingTiles = 3; // Start with 3 remaining tiles when grid size grows
-            } else {
-                this.remainingTiles = 3 + Math.floor((this.level - 1) / 2); // Gradual growth otherwise
-            }
-
-            this.previousGridSize = newGridSize; // Update the previous grid size
-            this.gridSize = newGridSize; // Set the current grid size
+            const level = this.levels[this.level]
 
             // Create a list of all possible tile indices for the current grid
-            const totalTiles = this.gridSize * this.gridSize;
+            const totalTiles = level.gridSize * level.gridSize;
             const availableTiles = Array.from({ length: totalTiles }, (_, i) => i); // [0, 1, ..., totalTiles - 1]
 
             // Generate a random sequence with unique tiles
-            for (let i = 0; i < this.remainingTiles; i++) {
+            for (let i = 0; i < level.remainingTiles; i++) {
                 const randomIndex = Phaser.Math.Between(0, availableTiles.length - 1);
                 const selectedTile = availableTiles.splice(randomIndex, 1)[0];
                 this.sequence.push(selectedTile);
@@ -88,20 +87,21 @@
         }
 
         createGrid() {
+            const level = this.levels[this.level]
             // Remove any existing tiles
             this.tiles.forEach(tile => tile.destroy());
             this.tiles = [];
 
             // Generate grid of tiles
-            const offsetX = (this.sys.game.config.width - this.tileSize * this.gridSize) / 2;
-            const offsetY = (this.sys.game.config.height - this.tileSize * this.gridSize) / 2;
+            const offsetX = (this.sys.game.config.width - this.tileSize * level.gridSize) / 2;
+            const offsetY = (this.sys.game.config.height - this.tileSize * level.gridSize);
 
-            for (let row = 0; row < this.gridSize; row++) {
-                for (let col = 0; col < this.gridSize; col++) {
+            for (let row = 0; row < level.gridSize; row++) {
+                for (let col = 0; col < level.gridSize; col++) {
                     const x = offsetX + col * this.tileSize;
                     const y = offsetY + row * this.tileSize;
 
-                    const tileIndex = row * this.gridSize + col;
+                    const tileIndex = row * level.gridSize + col;
                     const tile = this.add.rectangle(x + this.tileSize / 2, y + this.tileSize / 2,
                         this.tileSize - 10, this.tileSize - 10, this.defaultTileColor, 1)
                         .setInteractive();
@@ -244,13 +244,9 @@
             ).setOrigin(0.5).setInteractive();
 
             copyButton.on('pointerdown', () => {
-                let csvContent = Object.keys(this.reactions[0]).join(",") + "\n"
-                this.reactions.forEach(reaction => {
-                    csvContent += Object.values(reaction).join(",") + "\n"
-                })
-
+                const base64Content = btoa(JSON.stringify(this.reactions))
                 // Write CSV content to clipboard
-                navigator.clipboard.writeText(csvContent).then(() => {
+                navigator.clipboard.writeText(base64Content).then(() => {
                     alert('Results copied to clipboard!');
                 }).catch(() => {
                     alert('Failed to copy results.');
@@ -289,10 +285,10 @@
 
 
         resetGame() {
-            this.level = 1; // Reset level to 1
+            this.level = 0; // Reset level to 1
+            this.roundFailureCount = 0;
             this.sequence = []; // Clear the current sequence
             this.userSequence = []; // Clear the player's input
-            this.gridSize = 3; // Reset grid size to the initial 3x3 grid
             this.remainingTilesText.setText('Remaining Tiles: 0'); // Reset tiles UI
 
             this.startRound(); // Restart the game
@@ -302,7 +298,7 @@
     const config = {
         type: Phaser.AUTO,
         width: 800,
-        height: 600,
+        height: 800,
         parent: 'game-container',
         scene: MemoryGame,
         backgroundColor: '#000000',
