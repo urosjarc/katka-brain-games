@@ -94,7 +94,7 @@
 
             // Generate grid of tiles
             const offsetX = (this.sys.game.config.width - this.tileSize * level.gridSize) / 2;
-            const offsetY = (this.sys.game.config.height - this.tileSize * level.gridSize);
+            const offsetY = (this.sys.game.config.height - this.tileSize * level.gridSize) / 2;
 
             for (let row = 0; row < level.gridSize; row++) {
                 for (let col = 0; col < level.gridSize; col++) {
@@ -297,8 +297,8 @@
 
     const config = {
         type: Phaser.AUTO,
-        width: 800,
-        height: 800,
+        width: window.innerWidth,
+        height: window.innerHeight,
         parent: 'game-container',
         scene: MemoryGame,
         backgroundColor: '#000000',
